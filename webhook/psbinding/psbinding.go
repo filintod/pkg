@@ -349,10 +349,13 @@ func (ac *Reconciler) reconcileMutatingWebhook(ctx context.Context, caCert []byt
 		cur.NamespaceSelector = selector
 		cur.ObjectSelector = selector // 1.15+ only
 		cur.ClientConfig.CABundle = caCert
-		if cur.ClientConfig.Service == nil {
+		if cur.ClientConfig.Service != nil {
+			cur.ClientConfig.Service.Path = ptr.String(ac.Path())
+		} else if cur.ClientConfig.URL != nil {
+			cur.ClientConfig.URL = ptr.String(strings.TrimRight(*cur.ClientConfig.URL, "/") + "/" + ac.Path())
+		} else {
 			return fmt.Errorf("missing service reference for webhook: %s", wh.Name)
 		}
-		cur.ClientConfig.Service.Path = ptr.String(ac.Path())
 	}
 
 	if ok := equality.Semantic.DeepEqual(configuredWebhook, current); !ok {

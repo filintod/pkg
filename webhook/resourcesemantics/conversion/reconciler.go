@@ -19,6 +19,7 @@ package conversion
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"go.uber.org/zap"
 	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -96,12 +97,16 @@ func (r *reconciler) reconcileCRD(ctx context.Context, cacert []byte, key string
 	if crd.Spec.Conversion == nil ||
 		crd.Spec.Conversion.Strategy != apixv1.WebhookConverter ||
 		crd.Spec.Conversion.Webhook.ClientConfig == nil ||
-		crd.Spec.Conversion.Webhook.ClientConfig.Service == nil {
+		(crd.Spec.Conversion.Webhook.ClientConfig.Service == nil && crd.Spec.Conversion.Webhook.ClientConfig.URL == nil) {
 		return fmt.Errorf("custom resource %q isn't configured for webhook conversion", key)
 	}
 
 	crd.Spec.Conversion.Webhook.ClientConfig.CABundle = cacert
-	crd.Spec.Conversion.Webhook.ClientConfig.Service.Path = ptr.String(r.path)
+	if crd.Spec.Conversion.Webhook.ClientConfig.Service != nil {
+		crd.Spec.Conversion.Webhook.ClientConfig.Service.Path = ptr.String(r.path)
+	} else {
+		crd.Spec.Conversion.Webhook.ClientConfig.URL = ptr.String(strings.TrimRight(*crd.Spec.Conversion.Webhook.ClientConfig.URL, "/") + "/" + r.path)
+	}
 
 	if ok, err := kmp.SafeEqual(configuredCRD, crd); err != nil {
 		return fmt.Errorf("error diffing custom resource definitions: %w", err)

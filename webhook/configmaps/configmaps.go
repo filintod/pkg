@@ -20,9 +20,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -147,10 +147,13 @@ func (ac *reconciler) reconcileValidatingWebhook(ctx context.Context, caCert []b
 		}
 		webhook.Webhooks[i].Rules = rules
 		webhook.Webhooks[i].ClientConfig.CABundle = caCert
-		if webhook.Webhooks[i].ClientConfig.Service == nil {
-			return errors.New("missing service reference for webhook: " + wh.Name)
+		if webhook.Webhooks[i].ClientConfig.Service != nil {
+			webhook.Webhooks[i].ClientConfig.Service.Path = ptr.String(ac.Path())
+		} else if webhook.Webhooks[i].ClientConfig.URL != nil {
+			webhook.Webhooks[i].ClientConfig.URL = ptr.String(strings.TrimRight(*webhook.Webhooks[i].ClientConfig.URL, "/") + "/" + ac.Path())
+		} else {
+			return fmt.Errorf("missing service reference for webhook: %s", wh.Name)
 		}
-		webhook.Webhooks[i].ClientConfig.Service.Path = ptr.String(ac.Path())
 	}
 
 	if ok, err := kmp.SafeEqual(configuredWebhook, webhook); err != nil {
