@@ -70,7 +70,7 @@ func TestDrainMechanics(t *testing.T) {
 		req   = &http.Request{}
 		probe = &http.Request{
 			Header: http.Header{
-				"User-Agent": []string{network.KubeProbeUAPrefix},
+				network.UserAgentKey: []string{network.KubeProbeUAPrefix},
 			},
 		}
 		cnt   = 0
@@ -328,7 +328,7 @@ func TestHealthCheck(t *testing.T) {
 				Path: "/healthz",
 			},
 			Header: http.Header{
-				"User-Agent": []string{network.KubeProbeUAPrefix},
+				network.UserAgentKey: []string{network.KubeProbeUAPrefix},
 			},
 		}
 		cnt     = 0
@@ -358,6 +358,61 @@ func TestHealthCheck(t *testing.T) {
 	// Works for HealthCheck.
 	resp := httptest.NewRecorder()
 	drainer.ServeHTTP(resp, probe)
+	if got, want := resp.Code, http.StatusBadRequest; got != want {
+		t.Errorf("Probe status = %d, wanted %d", got, want)
+	}
+}
+
+func TestIsKProbe(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "http://example.com/", nil)
+	if err != nil {
+		t.Fatal("Error building request:", err)
+	}
+	if isKProbe(req) {
+		t.Error("Not a knative probe but counted as such")
+	}
+	req.Header.Set(network.ProbeHeaderName, network.ProbeHeaderValue)
+	if !isKProbe(req) {
+		t.Error("knative probe but not counted as such")
+	}
+	req.Header.Del(network.ProbeHeaderName)
+	if isKProbe(req) {
+		t.Error("Not a knative probe but counted as such")
+	}
+	req.Header.Set(network.ProbeHeaderName, "no matter")
+	if isKProbe(req) {
+		t.Error("Not a knative probe but counted as such")
+	}
+}
+
+func TestServeKProbe(t *testing.T) {
+	var (
+		kprobehash = "hash"
+		kprobe     = &http.Request{
+			Header: http.Header{
+				network.ProbeHeaderName: []string{network.ProbeHeaderValue},
+				network.HashHeaderName:  []string{kprobehash},
+			},
+		}
+		kprobeerr = &http.Request{
+			Header: http.Header{
+				network.ProbeHeaderName: []string{network.ProbeHeaderValue},
+			},
+		}
+	)
+
+	resp := httptest.NewRecorder()
+	serveKProbe(resp, kprobe)
+	if got, want := resp.Code, http.StatusOK; got != want {
+		t.Errorf("Probe status = %d, wanted %d", got, want)
+	}
+
+	if got, want := resp.Header().Get(network.HashHeaderName), kprobehash; got != want {
+		t.Errorf("KProbe hash = %s, wanted %s", got, want)
+	}
+
+	resp = httptest.NewRecorder()
+	serveKProbe(resp, kprobeerr)
 	if got, want := resp.Code, http.StatusBadRequest; got != want {
 		t.Errorf("Probe status = %d, wanted %d", got, want)
 	}
